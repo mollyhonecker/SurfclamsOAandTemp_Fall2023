@@ -1,0 +1,1454 @@
+---
+Authors: Molly Honecker and Laura Steeves
+  
+    output:
+  pdf_document: default
+  html_document: default
+---
+
+# Library and data loading
+
+```{r libraries, error = F, message = F}
+
+library(tidyverse)
+library(readxl)
+library(ggpubr)
+library(rstatix)
+library(dplyr)
+library(ggthemes)
+library(plotrix)
+library(foreign)
+library(agricolae)
+
+```
+
+```{r surf_data, error = F, message = F}
+
+surfclams <- read.csv("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/data + code/SurfClamsOA-Spring2023/data/Biodeposition_AllData_ForR_Omits.csv")
+
+surfclams$Treatment <- factor(surfclams$Treatment, levels = c("Ambient", "Medium", "Low"))
+
+```
+
+```{r sizecomp_data, message = F, error = F}
+
+AcuteBaseline_Growth_surfclams <- read.csv("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/data + code/SurfClamsOA-Spring2023/data/GrowthRate_ForUse_From24Hrs_SurfClamsOA.csv")
+
+ActualBaseline_Growth_surfclams <- read.csv("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/data + code/SurfClamsOA-Spring2023/data/GrowthRate_ForUse_FromPooledInitial_SurfClamsOA.csv")
+
+names(AcuteBaseline_Growth_surfclams)[names(AcuteBaseline_Growth_surfclams) == 'ï..Experiment'] <- 'Experiment'
+
+names(ActualBaseline_Growth_surfclams)[names(ActualBaseline_Growth_surfclams) == 'ï..Experiment'] <- 'Experiment'
+
+```
+
+```{r dataframes, error = F, message = F}
+
+surfclams_acute <- surfclams[surfclams$Experiment == "Acute",]
+surfclams_chronic <- surfclams[surfclams$Experiment == "Chronic",]
+surfclams_longterm <- surfclams[surfclams$Experiment == "LongTerm",]
+surfclams_ambient <- surfclams[surfclams$Treatment == "Ambient",]
+surfclams_medium <- surfclams[surfclams$Treatment == "Medium",]
+surfclams_low <- surfclams[surfclams$Treatment == "Low",]
+surfclams_big <- surfclams[surfclams$SizeClass == "Big",]
+surfclams_small <- surfclams[surfclams$SizeClass == "Small",]
+
+```
+
+```{r}
+
+ActualBaseline_Growth_surfclams_big <- ActualBaseline_Growth_surfclams[surfclams$SizeClass == "Big",]
+ActualBaseline_Growth_surfclams_small <- ActualBaseline_Growth_surfclams[surfclams$SizeClass == "Small",]
+
+```
+
+
+# Template code
+
+## Means and SE
+
+```{r VARIABLE_means, error = F, message = F}
+
+## Split data into groups of interest for means and SE, then find mean and SE of each group
+
+means_VARIABLE <- 
+  surfclams %>%
+  group_by(COLUMNS_TO_GROUP_BY) %>%
+  summarise_at(vars(VARIABLE), list(name = mean, 
+                                    ##  std.error in package plotrix, probably way to do in base R but I didn't do for now 
+                                    std.error))
+
+## Copy output table onto clipboard for transfer to Excel
+
+write_excel_csv(means_VARIABLE, "clipboard", row.names = F)
+
+```
+
+## Three-way AOV
+
+```{r VARIABLE_threewayaov_FullDescriptionTemplate, message = F, error = F}
+
+surfclams %>% sample_n_by(Experiment, Treatment, SizeClass, size=1)
+
+model_threewayaov_template <- lm(log(VAR) ~ Experiment + Treatment + SizeClass, data = surfclams)
+
+# Create a QQ plot of residuals
+
+ggqqplot(residuals(model_threewayaov_template))
+
+# Compute Shapiro-Wilk test of normality
+
+shapiro_test(residuals(model_threewayaov_template))
+
+# check for violation
+
+surfclams %>% levene_test(OIR_Std ~ Experiment*Treatment*SizeClass)
+
+# check for violation
+
+# conduct ANOVA
+
+res.aov <- aov(VAR ~ Experiment*Treatment*SizeClass, data = surfclams)
+
+summary(res.aov)
+
+# if three-way interaction significant, run simple two-way interactions
+
+# if grouping by size, sig. level - 0.025 (for main effects) (0.05/2 because we are splitting two ways)
+
+# Note: Tukey is corrected for bonferroni already
+
+# Note: By splitting into big and small clams we can test the effect of pH over time on each size class 
+
+#This is useful because we aren't really interested in comparing Acute Low pH big clams to Chronic Low pH small clams, you know?
+
+#Big clams only 
+big.model <-aov(VAR~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model)
+
+#Small clams only 
+small.model <-aov(VAR~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(small.model)
+
+#Ok but now for each pH treatment we ARE interested in comparing big and small clams in each treatment
+#So we are going to split by treatment 
+
+#Low pH
+low.model <-aov(VAR~Experiment*SizeClass, data=surfclams_low)
+#Because we have significance in our main effects, we can look at post-hoc 
+TukeyHSD(low.model)
+
+#Medium pH
+medium.model <-aov(VAR~Experiment*SizeClass, data=surfclams_medium)
+TukeyHSD(medium.model)
+
+#Ambient 
+ambient.model <-aov(VAR~Experiment*SizeClass, data=surfclams_ambient)
+TukeyHSD(ambient.model)
+
+```
+
+```{r VARIABLE_threewayaov_SimpleTemplate, message = F, error = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+VARIABLE_threeway <- aov(VARIABLE ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(VARIABLE_threeway)
+TukeyHSD(VARIABLE_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ACROSS experiments
+
+big.model_VARIABLE <-aov(VARIABLE~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_VARIABLE)
+
+small.model_VARIABLE <-aov(VARIABLE~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(small.model_VARIABLE)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_VARIABLE <-aov(VARIABLE~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_VARIABLE)
+
+medium.model_VARIABLE <-aov(VARIABLE~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_VARIABLE)
+
+ambient.model_VARIABLE <-aov(VARIABLE~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_VARIABLE)
+
+```
+
+## Box plot
+
+```{r VARIABLE_threewayaov_boxplot_FullDescriptionTemplate, error=F, message=FALSE}
+
+## Input desired file path for result and desired dimensions 
+
+png("FILEPATH", width = 750, height = 350)
+
+## Create boxplot
+
+BOXPLOT <- ggboxplot(surfclams, x = "Treatment", y = "VAR", 
+                     
+## Facet by experiment, split within experiment by size class
+                     
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  
+## add dots for each individual
+  
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  
+## Formatting
+  
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "LABEL")
+
+CRstd_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r VARIABLE_threewayaov_boxplot_SimpleTemplate, error = FALSE, message = FALSE}
+
+png("FILEPATH", width = 750, height = 350)
+
+BOXPLOT <- ggboxplot(surfclams, x = "Treatment", y = "VAR", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "LABEL")
+
+CRstd_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+## Violin plot
+
+```{r VARIABLE_threewayaov_violinplot_Template, error=F, message=FALSE}
+
+VARIABLE_violin <- ggplot(surfclams, aes(Treatment,VARIRABLE)) + geom_violin()
+
+VARIABLE_violin
+
+```
+
+# Clearance rate std.
+
+## Mean and SE
+
+```{r CR_Std_treament_meanSE, error = F, message = F}
+
+CR_Std_treatment_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment) %>%
+  summarise_at(vars(CR_Std), list(name = mean, std.error))
+
+write.csv(CR_Std_treatment_meanSE, "clipboard", row.names = F)
+
+```
+
+```{r CR_Std_size_meanSE, error = F, message = F}
+
+CR_Std_size_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarise_at(vars(CR_Std), list(name = mean, std.error))
+
+write.csv(CR_Std_size_meanSE, "clipboard", row.names = F)
+
+```
+
+## Three-way ANOVA
+
+```{r CR_Std_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+CR_Std_threeway <- aov(CR_Std ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(CR_Std_threeway)
+
+TukeyHSD(CR_Std_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ACROSS experiments
+
+big.model_CR_Std <-aov(CR_Std~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_CR_Std)
+
+small.model_CR_Std <-aov(CR_Std~Experiment*Treatment, data=surfclams_small)
+TukeyHSD(small.model_CR_Std)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_CR_Std <-aov(CR_Std~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_CR_Std)
+
+medium.model_CR_Std <-aov(CR_Std~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_CR_Std)
+
+ambient.model_CR_Std <-aov(CR_Std~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_CR_Std)
+
+```
+
+```{r}
+
+CR_Std_Tukey_big <- with(surfclams_big, interaction(Experiment, Treatment))
+amod <- aov(CR_Std ~ CR_Std_Tukey_big, data=surfclams_big)
+print(HSD.test(amod, "CR_Std_Tukey_big", group=TRUE))
+
+CR_Std_Tukey_small <- with(surfclams_small, interaction(Experiment, Treatment))
+amod <- aov(CR_Std ~ CR_Std_Tukey_small, data=surfclams_small)
+print(HSD.test(amod, "CR_Std_Tukey_small", group=TRUE))
+
+```
+
+
+## Box plot
+
+```{r CR_Std_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/CR_Std_box.png", width = 750, height = 350)
+
+CR_Std_box <- ggboxplot(surfclams, x = "Treatment", y = "CR_Std", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Clearance rate (L/hour)")
+
+CR_Std_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r CR_Std_Temp_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/CR_Std_Temp_box.png", width = 750, height = 350)
+
+CR_Std_Temp_box <- ggboxplot(surfclams, x = "Treatment", y = "CR_Std_Temp", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Clearance rate (L/hour)")
+
+CR_Std_Temp_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+# Rejection rate std.
+
+## Mean and SE
+
+```{r RR_Std_Temp_treament_meanSE, error = F, message = F}
+
+RR_Std_Temp_treatment_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment) %>%
+  summarise_at(vars(RR_Std_Temp), list(name = mean, std.error))
+
+write.csv(RR_Std_Temp_treatment_meanSE, "clipboard", row.names = F)
+
+```
+
+```{r RR_Std_Temp_size_meanSE, error = F, message = F}
+
+RR_Std_Temp_size_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarise_at(vars(RR_Std_Temp), list(name = mean, std.error))
+
+write.csv(RR_Std_Temp_size_meanSE, "clipboard", row.names = F)
+
+```
+
+## Three-way ANOVA
+
+```{r RR_Std_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+RR_Std_threeway <- aov(RR_Std ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(RR_Std_threeway)
+
+TukeyHSD(RR_Std_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ARROSS experiments
+
+big.model_RR_Std <-aov(RR_Std~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_RR_Std)
+
+small.model_RR_Std <-aov(RR_Std~Experiment*Treatment, data=surfclams_small)
+TukeyHSD(small.model_RR_Std)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_RR_Std <-aov(RR_Std~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_RR_Std)
+
+medium.model_RR_Std <-aov(RR_Std~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_RR_Std)
+
+ambient.model_RR_Std <-aov(RR_Std~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_RR_Std)
+
+```
+
+```{r}
+
+RR_Std_Tukey_big <- with(surfclams_big, interaction(Experiment, Treatment))
+amod <- aov(RR_Std ~ RR_Std_Tukey_big, data=surfclams_big)
+print(HSD.test(amod, "RR_Std_Tukey_big", group=TRUE))
+
+RR_Std_Tukey_small <- with(surfclams_small, interaction(Experiment, Treatment))
+amod <- aov(RR_Std ~ RR_Std_Tukey_small, data=surfclams_small)
+print(HSD.test(amod, "RR_Std_Tukey_small", group=TRUE))
+
+```
+
+
+## Box plot
+
+```{r RR_Std_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/RR_Std_box.png", width = 750, height = 350)
+
+RR_Std_box <- ggboxplot(surfclams, x = "Treatment", y = "RR_Std", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Rejection rate (mg/hour)")
+
+RR_Std_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r RR_Std_Temp_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/RR_Std_Temp_box.png", width = 750, height = 350)
+
+RR_Std_Temp_box <- ggboxplot(surfclams, x = "Treatment", y = "RR_Std_Temp", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Rejection rate (mg/hour)")
+
+RR_Std_Temp_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+# Organic ingestion rate std.
+
+## Mean and SE
+
+```{r OIR_Std_Temp_treament_meanSE, error = F, message = F}
+
+OIR_Std_Temp_treatment_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment) %>%
+  summarise_at(vars(OIR_Std_Temp), list(name = mean, std.error))
+
+write.csv(OIR_Std_Temp_treatment_meanSE, "clipboard", row.names = F)
+
+```
+
+```{r OIR_Std_Temp_size_meanSE, error = F, message = F}
+
+OIR_Std_Temp_size_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarise_at(vars(OIR_Std_Temp), list(name = mean, std.error))
+
+write.csv(OIR_Std_Temp_size_meanSE, "clipboard", row.names = F)
+
+```
+
+## Three-way ANOVA
+
+```{r OIR_Std_Temp_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+OIR_Std_Temp_threeway <- aov(OIR_Std_Temp ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(OIR_Std_Temp_threeway)
+
+TukeyHSD(OIR_Std_Temp_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND AOIROSS experiments
+
+big.model_OIR_Std_Temp <-aov(OIR_Std_Temp~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_OIR_Std_Temp)
+
+small.model_OIR_Std_Temp <-aov(OIR_Std_Temp~Experiment*Treatment, data=surfclams_small)
+TukeyHSD(small.model_OIR_Std_Temp)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_OIR_Std_Temp <-aov(OIR_Std_Temp~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_OIR_Std_Temp)
+
+medium.model_OIR_Std_Temp <-aov(OIR_Std_Temp~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_OIR_Std_Temp)
+
+ambient.model_OIR_Std_Temp <-aov(OIR_Std_Temp~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_OIR_Std_Temp)
+
+```
+
+## Box plot
+
+```{r OIR_Std_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/OIR_Std_box.png", width = 750, height = 350)
+
+OIR_Std_box <- ggboxplot(surfclams, x = "Treatment", y = "OIR_Std", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Organic ingestion rate (mg/hour)")
+
+OIR_Std_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r OIR_Std_Temp_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/OIR_Std_Temp_box.png", width = 750, height = 350)
+
+OIR_Std_Temp_box <- ggboxplot(surfclams, x = "Treatment", y = "OIR_Std_Temp", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Organic ingestion rate (mg/hour)")
+
+OIR_Std_Temp_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+# Egestion rate std.
+
+## Mean and SE
+
+```{r ER_Std_Temp_treament_meanSE, error = F, message = F}
+
+ER_Std_Temp_treatment_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment) %>%
+  summarise_at(vars(ER_Std_Temp), list(name = mean, std.error))
+
+write.csv(ER_Std_Temp_treatment_meanSE, "clipboard", row.names = F)
+
+```
+
+```{r ER_Std_Temp_size_meanSE, error = F, message = F}
+
+ER_Std_Temp_size_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarise_at(vars(ER_Std_Temp), list(name = mean, std.error))
+
+write.csv(ER_Std_Temp_size_meanSE, "clipboard", row.names = F)
+
+```
+
+## Three-way ANOVA
+
+```{r ER_Std_Temp_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+ER_Std_Temp_threeway <- aov(ER_Std_Temp ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(ER_Std_Temp_threeway)
+
+TukeyHSD(ER_Std_Temp_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND AEROSS experiments
+
+big.model_ER_Std_Temp <-aov(ER_Std_Temp~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_ER_Std_Temp)
+
+small.model_ER_Std_Temp <-aov(ER_Std_Temp~Experiment*Treatment, data=surfclams_small)
+TukeyHSD(small.model_ER_Std_Temp)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_ER_Std_Temp <-aov(ER_Std_Temp~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_ER_Std_Temp)
+
+medium.model_ER_Std_Temp <-aov(ER_Std_Temp~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_ER_Std_Temp)
+
+ambient.model_ER_Std_Temp <-aov(ER_Std_Temp~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_ER_Std_Temp)
+
+```
+
+## Box plot
+
+```{r ER_Std_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/ER_Std_box.png", width = 750, height = 350)
+
+ER_Std_box <- ggboxplot(surfclams, x = "Treatment", y = "ER_Std", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Egestion rate (mg/hour)")
+
+ER_Std_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r ER_Std_Temp_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/ER_Std_Temp_box.png", width = 750, height = 350)
+
+ER_Std_Temp_box <- ggboxplot(surfclams, x = "Treatment", y = "ER_Std_Temp", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Egestion rate (mg/hour)")
+
+ER_Std_Temp_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+# Absorbtion rate std.
+
+!!! Double standardized? !!!
+
+## Mean and SE
+
+```{r AR_Std_Temp_treament_meanSE, error = F, message = F}
+
+AR_Std_Temp_treatment_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment) %>%
+  summarise_at(vars(AR_Std_Temp), list(name = mean, std.error))
+
+write.csv(AR_Std_Temp_treatment_meanSE, "clipboard", row.names = F)
+
+```
+
+```{r AR_Std_Temp_size_meanSE, error = F, message = F}
+
+AR_Std_Temp_size_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarise_at(vars(AR_Std_Temp), list(name = mean, std.error))
+
+write.csv(AR_Std_Temp_size_meanSE, "clipboard", row.names = F)
+
+```
+
+## Three-way ANOVA
+
+```{r AR_Std_Temp_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+AR_Std_Temp_threeway <- aov(AR_Std_Temp ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(AR_Std_Temp_threeway)
+
+TukeyHSD(AR_Std_Temp_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND AAROSS experiments
+
+big.model_AR_Std_Temp <-aov(AR_Std_Temp~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_AR_Std_Temp)
+
+small.model_AR_Std_Temp <-aov(AR_Std_Temp~Experiment*Treatment, data=surfclams_small)
+TukeyHSD(small.model_AR_Std_Temp)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_AR_Std_Temp <-aov(AR_Std_Temp~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_AR_Std_Temp)
+
+medium.model_AR_Std_Temp <-aov(AR_Std_Temp~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_AR_Std_Temp)
+
+ambient.model_AR_Std_Temp <-aov(AR_Std_Temp~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_AR_Std_Temp)
+
+```
+
+## Box plot
+
+```{r AR_Std_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/AR_Std_box.png", width = 750, height = 350)
+
+AR_Std_box <- ggboxplot(surfclams, x = "Treatment", y = "AR_Std", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Absorbtion rate (mg/hour)")
+
+AR_Std_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r AR_Std_Temp_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/AR_Std_Temp_box.png", width = 750, height = 350)
+
+AR_Std_Temp_box <- ggboxplot(surfclams, x = "Treatment", y = "AR_Std_Temp", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Absorbtion rate (mg/hour)")
+
+AR_Std_Temp_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+# Absorbtion efficiency std.
+
+## Mean and SE
+
+```{r AE_Std_Temp_treament_meanSE, error = F, message = F}
+
+AE_Std_Temp_treatment_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment) %>%
+  summarise_at(vars(AE_Std_Temp), list(name = mean, std.error))
+
+write.csv(AE_Std_Temp_treatment_meanSE, "clipboard", row.names = F)
+
+```
+
+```{r AE_Std_Temp_size_meanSE, error = F, message = F}
+
+AE_Std_Temp_size_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarise_at(vars(AE_Std_Temp), list(name = mean, std.error))
+
+write.csv(AE_Std_Temp_size_meanSE, "clipboard", row.names = F)
+
+```
+
+## Three-way ANOVA
+
+```{r AE_Std_Temp_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+AE_Std_Temp_threeway <- aov(AE_Std_Temp ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(AE_Std_Temp_threeway)
+
+TukeyHSD(AE_Std_Temp_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND AAEOSS experiments
+
+big.model_AE_Std_Temp <-aov(AE_Std_Temp~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_AE_Std_Temp)
+
+small.model_AE_Std_Temp <-aov(AE_Std_Temp~Experiment*Treatment, data=surfclams_small)
+TukeyHSD(small.model_AE_Std_Temp)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_AE_Std_Temp <-aov(AE_Std_Temp~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_AE_Std_Temp)
+
+medium.model_AE_Std_Temp <-aov(AE_Std_Temp~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_AE_Std_Temp)
+
+ambient.model_AE_Std_Temp <-aov(AE_Std_Temp~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_AE_Std_Temp)
+
+```
+
+## Box plot
+
+```{r AE_Std_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/AE_Std_box.png", width = 750, height = 350)
+
+AE_Std_box <- ggboxplot(surfclams, x = "Treatment", y = "AE_Std", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Absorbtion efficiency")
+
+AE_Std_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r AE_Std_Temp_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/AE_Std_Temp_box.png", width = 750, height = 350)
+
+AE_Std_Temp_box <- ggboxplot(surfclams, x = "Treatment", y = "AE_Std_Temp", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Absorbtion efficiency")
+
+AE_Std_Temp_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+# Burrowing
+
+```{r burrow_time_sd, message = F, error = F}
+
+surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarize(mean_BurrowTime = mean(BurrowTime, na.rm = TRUE))
+
+```
+
+```{r burrow_time_aov, message = F, error = F}
+
+burrow_acute <- aov(BurrowTime ~ Treatment, 
+                   data = surfclams_acute)
+summary(burrow_acute)
+
+burrow_chronic <- aov(BurrowTime ~ Treatment, 
+                   data = surfclams_chronic)
+summary(burrow_chronic)
+
+burrow_longterm <- aov(BurrowTime ~ Treatment, 
+                   data = surfclams_longterm)
+summary(burrow_longterm)
+
+```
+
+```{r burrow_freq_acute_logit, message = F, error = F}
+
+## Logistic regression examining treatment impact on burrowing frequency in 
+## acute experiment
+
+logit_burrow_acute <- glm(BurrowYN ~ Treatment,
+                    data = surfclams_acute,
+                    family = "binomial")
+
+tidy(logit_burrow_acute)
+
+logit_burrow_chronic <- glm(BurrowYN ~ Treatment,
+                    data = surfclams_chronic,
+                    family = "binomial")
+
+tidy(logit_burrow_chronic)
+
+logit_burrow_chronic <- glm(BurrowYN ~ Treatment,
+                    data = surfclams_longterm,
+                    family = "binomial")
+
+tidy(logit_burrow_chronic)
+
+```
+
+
+```{r burrow_freq_logit, message = F, error = F}
+
+## Logistic regression examining treatment impact on burrowing frequency in 
+## entire experiment
+
+logit_burrow <- glm(Burrow10 ~ Treatment*Experiment,
+                    data = surfclams,
+                    family = "binomial")
+
+tidy(logit_burrow)
+
+```
+
+```{r burrow_time_fig_box, message = F, error = F}
+
+burrow_time_box <- ggboxplot(surfclams, x = "Treatment", y = "BurrowTime", 
+  color = "SizeClass", facet.by = "Experiment")  +
+  geom_point(position = position_jitterdodge(), aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Time till burrowed (min)")
+
+burrow_box + scale_color_manual(name = "Size group")
+
+```
+
+```{r burrow_time_fig_density, message = F, error = F}
+
+burrow_time_density <- ggplot(surfclams, aes(BurrowTime))
+
+burrow_time_density + geom_density(aes(fill=factor(Treatment)), alpha=0.8) + 
+  facet_grid( ~ Experiment) +
+  theme_classic() +
+    labs(x = "Time untill burrowed (min)",
+         y = "Density",
+         fill = "Treatment")  + scale_fill_manual(name = "Size group")
+
+```
+
+```{r burrow_freq_fig_bar, message = F, error = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/burrow_freq_bar_r.png", width = 750, height = 550)
+
+burrow_freq_bar <- ggplot(surfclams, aes(BurrowYN))  + geom_bar(aes(fill = Treatment), alpha = 0.9) + 
+  facet_grid(Experiment ~ Treatment) +
+    scale_x_continuous(breaks = c(0,1), label = c("No", "Yes")) +
+    theme_classic() +
+    labs(x="Burrowing status",
+         y = "Count")
+
+burrow_freq_bar + theme(axis.title = element_text(size = 32),
+                  axis.text = element_text(size = 28, color = "black"),
+                  legend.title = element_text(size = 0),
+                  legend.text = element_text(size = 0),
+                  text = element_text(size = 32)) + 
+  scale_fill_manual(values = c("#9ed1ffff", "#eedd88ff", "#ffaabbff"))
+
+dev.off()
+
+```
+
+# Growth info (shell and tissue)
+
+## Shell length growth rate
+
+### AOV
+
+```{r ShellLength_GrowthRate_aov, error = F, message = F}
+
+ShellLengthGrowthRate_twoway <- aov(MeanGrowthRate ~ Treatment*Experiment*SizeClass,
+                   data = AcuteBaseline_Growth_surfclams)
+summary(ShellLengthGrowthRate_twoway)
+TukeyHSD(ShellLengthGrowthRate_twoway)
+
+ShellLengthGrowthRate_Treatment_oneway <- aov(Avg_Growth_Daily ~ Treatment*SizeClass,
+                   data = AcuteBaseline_Growth_surfclams)
+summary(ShellLengthGrowthRate_Treatment_oneway)
+TukeyHSD(ShellLengthGrowthRate_Treatment_oneway)
+
+ShellLengthGrowthRate_SizeClass_oneway <- aov(Avg_Growth_Daily ~ Treatment*SizeClass,
+                   data = AcuteBaseline_Growth_surfclams)
+summary(ShellLengthGrowthRate_SizeClass_oneway)
+TukeyHSD(ShellLengthGrowthRate_SizeClass_oneway)
+
+```
+
+```{r}
+
+shell_Tukey_big <- with(ActualBaseline_Growth_surfclams_big, interaction(Treatment, Experiment))
+shell_big_aov_tukey_1 <- aov(MeanGrowthRate ~ shell_Tukey_big, data=ActualBaseline_Growth_surfclams_big)
+print(HSD.test(shell_big_aov_tukey_1, "shell_Tukey_big", group=TRUE))
+
+shell_Tukey_small <- with(ActualBaseline_Growth_surfclams_small, interaction(Treatment, Experiment))
+shell_small_aov_tukey_2 <- aov(MeanGrowthRate ~ shell_Tukey_small, data=ActualBaseline_Growth_surfclams_small)
+print(HSD.test(shell_small_aov_tukey_2, "shell_Tukey_small", group=TRUE))
+
+```
+
+
+### Box plot
+
+```{r AcuteBasebline_ShellLength_GrowthRate_fig_boxplot, message = F, error = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/AcuteBaseline_ShellLength_GrowthRate_boxplot_r.png", width = 550, height = 250)
+
+AcuteBaseline_GrowthRate_box <- ggboxplot(AcuteBaseline_Growth_surfclams, x = "Treatment", y = "MeanGrowthRate", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Mean growth rate (mm/day)")
+
+AcuteBaseline_GrowthRate_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+```{r ActualBaseline_ShellLength_GrowthRate_fig_boxplot, message = F, error = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/ActualBaseline_ShellLength_GrowthRate_boxplot_r.png", width = 550, height = 250)
+
+ActualBaseline_GrowthRate_box <- ggboxplot(ActualBaseline_Growth_surfclams, x = "Treatment", y = "MeanGrowthRate", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Mean growth rate (mm/day)")
+
+ActualBaseline_GrowthRate_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+## Shell strength
+
+### Three-way AOV
+
+```{r ShellStrength_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+ShellStrength_threeway <- aov(ShellStrength ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(ShellStrength_threeway)
+TukeyHSD(ShellStrength_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ACROSS experiments
+
+big.model_ShellStrength <-aov(ShellStrength~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_ShellStrength)
+
+small.model_ShellStrength <-aov(ShellStrength~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(small.model_ShellStrength)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_ShellStrength <-aov(ShellStrength~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_ShellStrength)
+
+medium.model_ShellStrength <-aov(ShellStrength~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_ShellStrength)
+
+ambient.model_ShellStrength <-aov(ShellStrength~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_ShellStrength)
+
+```
+
+### Box plot
+
+```{r ShellStrength_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/ShellStrength_box.png", width = 750, height = 350)
+
+ShellStrength_box <- ggboxplot(surfclams, x = "Treatment", y = "ShellStrength", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Shell strength (N)")
+
+ShellStrength_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+## Shell thickness
+
+### Three-way AOV
+
+```{r ShellThickness_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+ShellThickness_threeway <- aov(ShellThickness ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(ShellThickness_threeway)
+TukeyHSD(ShellThickness_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ACROSS experiments
+
+big.model_ShellThickness <-aov(ShellThickness~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_ShellThickness)
+
+small.model_ShellThickness <-aov(ShellThickness~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(small.model_ShellThickness)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_ShellThickness <-aov(ShellThickness~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_ShellThickness)
+
+medium.model_ShellThickness <-aov(ShellThickness~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_ShellThickness)
+
+ambient.model_ShellThickness <-aov(ShellThickness~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_ShellThickness)
+
+```
+
+### Box plot
+
+```{r ShellThickness_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/ShellThickness_box.png", width = 750, height = 350)
+
+ShellThickness_box <- ggboxplot(surfclams, x = "Treatment", y = "ShellThickness", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Shell thickness (mm)")
+
+ShellThickness_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+## Condition Index
+
+### Means and SE
+
+```{r CI_Std_Temp_treament_meanSE, error = F, message = F}
+
+CI_Std_Temp_treatment_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment) %>%
+  summarise_at(vars(ConditionIndex), list(name = mean, std.error))
+
+write.csv(CI_Std_Temp_treatment_meanSE, "clipboard", row.names = F)
+
+```
+
+```{r CI_Std_Temp_size_meanSE, error = F, message = F}
+
+CI_Std_Temp_size_meanSE <- 
+  surfclams %>%
+  group_by(Experiment, Treatment, SizeClass) %>%
+  summarise_at(vars(ConditionIndex), list(name = mean, std.error))
+
+write.csv(CI_Std_Temp_size_meanSE, "clipboard", row.names = F)
+
+```
+
+### Three-way AOV
+
+```{r CI_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+CI_threeway <- aov(ConditionIndex ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(CI_threeway)
+TukeyHSD(CI_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ACROSS experiments
+
+big.model_CI <-aov(ConditionIndex~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_CI)
+
+small.model_CI <-aov(ConditionIndex~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(small.model_CI)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_CI <-aov(ConditionIndex~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_CI)
+
+medium.model_CI <-aov(ConditionIndex~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_CI)
+
+ambient.model_CI <-aov(ConditionIndex~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_CI)
+
+```
+
+### Box plot
+
+```{r CI_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/CI_box.png", width = 750, height = 350)
+
+CI_box <- ggboxplot(surfclams, x = "Treatment", y = "ConditionIndex", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Condition Index")
+
+CI_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+## Dry tissue weight
+
+### Three-way AOV
+
+```{r DryWeight_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+DryWeight_threeway <- aov(DryWeight ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(DryWeight_threeway)
+TukeyHSD(DryWeight_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ACROSS experiments
+
+big.model_DryWeight <-aov(DryWeight~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_DryWeight)
+
+small.model_DryWeight <-aov(DryWeight~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(small.model_DryWeight)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_DryWeight <-aov(DryWeight~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_DryWeight)
+
+medium.model_DryWeight <-aov(DryWeight~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_DryWeight)
+
+ambient.model_DryWeight <-aov(DryWeight~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_DryWeight)
+
+```
+
+### Box plot
+
+```{r DryWeight_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/DryWeight_box.png", width = 750, height = 350)
+
+DryWeight_box <- ggboxplot(surfclams, x = "Treatment", y = "DryWeight", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Dry tissue weight (mg)")
+
+DryWeight_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
+## Dry shell weight
+
+### Three-way AOV
+
+```{r ShellWeight_threewayaov, error = F, message = F}
+
+## First, three-way AOV to see if there are interactions aka differential impacts
+## on different treatment/exp./size class groups
+
+ShellWeight_threeway <- aov(ShellWeight ~ Treatment*Experiment*SizeClass, 
+                   data = surfclams)
+summary(ShellWeight_threeway)
+TukeyHSD(ShellWeight_threeway)
+
+## Split by size class to investigate treatment effects 
+## WITHIN size classes WITHIN AND ACROSS experiments
+
+big.model_ShellWeight <-aov(ShellWeight~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(big.model_ShellWeight)
+
+small.model_ShellWeight <-aov(ShellWeight~Experiment*Treatment, data=surfclams_big)
+TukeyHSD(small.model_ShellWeight)
+
+## Split by treatment to investigate size class effects 
+## WITHIN experiments and treatments
+
+low.model_ShellWeight <-aov(ShellWeight~Experiment*SizeClass, data = surfclams_low)
+TukeyHSD(low.model_ShellWeight)
+
+medium.model_ShellWeight <-aov(ShellWeight~Experiment*SizeClass, data = surfclams_medium)
+TukeyHSD(medium.model_ShellWeight)
+
+ambient.model_ShellWeight <-aov(ShellWeight~Experiment*SizeClass, data = surfclams_ambient)
+TukeyHSD(ambient.model_ShellWeight)
+
+```
+
+### Box plot
+
+```{r ShellWeight_threewayaov_boxplot, error = F, message = F}
+
+png("C:/Users/molly/Desktop/research/steeves + munroe - OA surfclam rios summer 23/raw figures from r/ShellWeight_box.png", width = 750, height = 350)
+
+ShellWeight_box <- ggboxplot(surfclams, x = "Treatment", y = "ShellWeight", 
+  color = "SizeClass", facet.by = "Experiment", lwd = 0.8) +
+  geom_point(position = position_jitterdodge(), alpha = 0.5, aes(x = Treatment, color = SizeClass)) +
+  theme(legend.position = "right") +
+  theme_classic() +
+  labs(y = "Dry shell weight (mg)")
+
+ShellWeight_box + theme(axis.title = element_text(size = 16),
+                  axis.text = element_text(size = 14, color = "black"),
+                  legend.title = element_text(size = 16),
+                  legend.text = element_text(size = 14),
+                  strip.text.x = element_text(size = 16)) + scale_color_manual(name = "Size group",
+                               values = c("#44bb99", "#f8a163"))
+
+dev.off()
+
+```
+
